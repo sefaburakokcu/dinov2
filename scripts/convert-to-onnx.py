@@ -34,6 +34,7 @@ def parse_arguments():
     parser.add_argument("--image_height", type=int, default=280, help="Input image height (multiple of patch_size)")
     parser.add_argument("--image_width", type=int, default=280, help="Input image width (multiple of patch_size)")
     parser.add_argument("--patch_size", type=int, default=14, help="DINOV2 model patch size (default is 14)")
+    parser.add_argument("--simplify", action="store_true", help="Enable ONNX model simplification")
     return parser.parse_args()
 
 
@@ -46,7 +47,7 @@ def main():
     assert args.image_height % args.patch_size == 0, f"Image height must be a multiple of {args.patch_size}, but got {args.image_height}"
     assert args.image_width % args.patch_size == 0, f"Image width must be a multiple of {args.patch_size}, but got {args.image_height}"
 
-    model = Wrapper(hubconf.dinov2_vits14(for_onnx=True)).to("cpu")
+    model = Wrapper(getattr(hubconf, args.model_name)(for_onnx=True)).to("cpu")
     model.eval()
 
     dummy_input = torch.rand([1, 3, args.image_height, args.image_width]).to("cpu")
@@ -55,6 +56,22 @@ def main():
     onnx_file_path = f"{args.model_name}.onnx"
     torch.onnx.export(model, dummy_input, onnx_file_path, input_names=["input"], output_names=["output"])
     print(f"Model exported to: {onnx_file_path}")
+
+    if args.simplify:
+        import onnx
+        try:
+            from onnxsim import simplify
+        except ImportError as e:
+            print("onnxsim is not installed. Please install onnxsim to simplify the model.")
+            sys.exit(0)
+
+        try:
+            model_simp, check = simplify(onnx_file_path)
+            if check:
+                onnx.save(model_simp, onnx_file_path)
+                print("ONNX model is simplified.")
+        except Exception as e:
+            print(f"ONNX model can not be simplified due to {e}.")
 
 
 if __name__ == "__main__":
